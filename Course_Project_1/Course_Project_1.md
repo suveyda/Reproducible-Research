@@ -65,7 +65,6 @@ about data distribution. Here in order to show you different levels of
 distribution, we plot 4 histograms using different breaks (5, 10, 15 and
 20).
 
-    #png("histogram.1.png")
     op <- par(mfrow = c(2,2), oma = c(5,4,1,0) + 0.1, mar = c(0,0,2,2) + 0.1)
 
     hist(total.steps.per.day$Total.Steps, xlab = "", main = "", col = "lightgreen", ylim = c(0,30))
@@ -76,10 +75,7 @@ distribution, we plot 4 histograms using different breaks (5, 10, 15 and
     title("Distribution of Total Steps per Day", outer=TRUE)
     title(xlab = "Total steps per day", ylab = "Frequency", outer = TRUE)
 
-![](Course_Project_1_files/figure-markdown_strict/unnamed-chunk-5-1.png)
-
-    par(op)
-    #dev.off()
+![](histogram.1.png)
 
 Furthermore, you can see the mean and median of the total number of
 steps taken per day below.
@@ -108,13 +104,10 @@ ggplot2 to R and plot the below figure.
 
     library("ggplot2")
 
-    #png("time.series.plot.1.png")
     time_series_plot <- ggplot(data = average.steps.per.interval, aes(x = Interval, y = Average.Steps)) + geom_line(colour = "red") + ggtitle("Average Daily Activity Pattern") + theme(plot.title = element_text(hjust = 0.5)) + ylab("Average # of Steps") + xlab("Time Intervals")
     time_series_plot
 
-![](Course_Project_1_files/figure-markdown_strict/unnamed-chunk-9-1.png)
-
-    #dev.off()
+![](time.series.plot.1.png)
 
 In the above plot, we observe the maximum number of steps around 8 am.
 Let's find the exact interval.
@@ -162,7 +155,6 @@ day between these two data sets.
 First we plot the histogram to see the distribution and frequency of the
 newly recalculated total number of steps per day.
 
-    #png("histogram.2.png")
     op <- par(mfrow = c(2,2), oma = c(5,4,1,0) + 0.1, mar = c(0,0,2,2) + 0.1)
 
     hist(total.steps.per.day.v2$Total.Steps, xlab = "", main = "", col = "lightgreen", ylim = c(0,40))
@@ -173,10 +165,7 @@ newly recalculated total number of steps per day.
     title("Distribution of Total Steps per Day", outer=TRUE)
     title(xlab = "Total steps per day", ylab = "Frequency", outer = TRUE)
 
-![](Course_Project_1_files/figure-markdown_strict/unnamed-chunk-14-1.png)
-
-    par(op)
-    #dev.off()
+![](histogram.2.png)
 
 And now recalculate the mean and median
 
@@ -212,13 +201,10 @@ Then we make a panel plot containing a time series plot of the 5-minute
 interval and the average number of steps taken, averaged across all
 weekday days or weekend days.
 
-    #png("time.series.plot.2.png")
     time_series_plot.v2 <- ggplot(data = average.steps.per.interval.v2, aes(x = Interval, y = Average.Steps)) + geom_line(colour = "red") + facet_wrap(~Day, nrow = 2) + ggtitle("Average Daily Activity Pattern") + theme(plot.title = element_text(hjust = 0.5)) + ylab("Average # of Steps") + xlab("Time Intervals")
     time_series_plot.v2
 
-![](Course_Project_1_files/figure-markdown_strict/unnamed-chunk-18-1.png)
-
-    #dev.off()
+![](time.series.plot.2.png)
 
 As you can see from the above time series plots, there are slight
 differences between the daily activity pattern between weekdays and
