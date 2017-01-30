@@ -1,0 +1,403 @@
+---
+title: "Course_Project_2"
+author: "suveyda"
+date: "January 30, 2017"
+output: html_document
+---
+
+# Course Project 2
+
+## Reproducible Research by Johns Hopkins University
+
+### Introduction
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage. The basic goal of this project is to explore the NOAA Storm Database and answer some basic questions about severe weather events.
+
+### Data
+
+The data for this project come in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. You can download the file from the course web site.
+
+There is also some documentation of the database. In the below files you can find how some of the variables are constructed/defined. Information we obtain from the below files will become useful in the data processing and analysis steps. 
+
+* National Weather Service Storm Data Documentation
+* National Climatic Data Center Storm Events FAQ
+
+Let's first load the data and become familiar with the available variables:
+
+```{r}
+data <- read.csv(bzfile("repdata-data-StormData.csv.bz2"))
+str(data)
+```
+
+As you can see we have a large data set with 902,297 observations and 37 variables. Before starting our analysis, we need to process the data and make it more suitable for our analysis.
+
+### Data processing
+
+Since the data set is very large, we will try to eliminate unnecessary observations and variables.
+
+```{r, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+#### Eliminating unnecessary variables
+
+First of all, we create a subset of the data set by taking only the required variables for the analysis. For our analysis we will keep only the following variables:
+
+* BGN_DATE
+* EVTYPE
+* FATALITIES
+* INJURIES
+* PROPDMG
+* PROPDMGEXP
+* CROPDMG
+* CROPDMGEXP
+
+```{r}
+temp.data.1 <- subset(data, select = c("BGN_DATE", "EVTYPE","FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP"))
+```
+
+#### Eliminating the observations recorded in earlier years
+
+The events in the data set start in the year 1950 and end in November 2011. However, the project document states that in the earlier years fewer event types were recorded to the database. In order to solve this issue let's first find the number of unique event types recorded each year.
+
+First, we convert the factor type BGN_DATE variable into a Date type. Then we create a new YEAR variable. Using the EVTYPE and YEAR variables, we can find the unique number of event types observed at each year.
+
+```{r}
+temp.data.1$BGN_DATE <- as.Date(temp.data.1$BGN_DATE, format = "%m/%d/%Y")
+temp.data.1$YEAR <- format(temp.data.1$BGN_DATE,"%Y")
+date.data <- unique(temp.data.1[,c("EVTYPE", "YEAR")])
+table(date.data[,2])
+```
+
+From the above table we can see that the number of different EVTYPE were really very small in the earlier years. Up until 1993, only three types of events (HAIL, TORNADO, and TSTM WIND) were stored in the data set. In order to prevent a bias towards these three event types, we use only the observations observed after 1992.
+
+```{r}
+temp.data.2 <- subset(temp.data.1, temp.data.1$BGN_DATE > as.Date("1992-12-31"))
+```
+
+#### Processing EVTYPE
+
+According to the Storm Data Event Table (Table 1, p.6) in the NWS Storm Data Documentation, there should be 48 event types in the data set. However, in the previous part we see that for instance in 1995, 387 different EVTYPE were recorded. A brief scan of the EVTYPE variable shows us that there are some misspellings or minor variances in the entries that should be handled before starting the analysis.
+
+```{r}
+length(unique(temp.data.2$EVTYPE))
+events <- temp.data.2$EVTYPE
+```
+
+At the beginning, there are 985 different EVTYPE in the dataset. After each step we will check the number of unique EVTYPE and observe our progress.
+
+##### Convert to lower case letters:
+
+Let's first convert all letters in the EVTYPE to lower case so that variations such as "Thunderstorm Wind" and "THUNDERSTORM WIND" can be counted together.
+
+```{r}
+events <- tolower(events)
+length(unique(events))
+```
+
+##### Remove all punctuation marks:
+
+Now we remove all punctuation marks from the EVTYPE entries. Therefore, EVTYPEs such as "frost/freeze" and "frost\\freeze" can match.
+
+```{r}
+events <- gsub("[[:punct:]+]", " ", events)
+length(unique(events))
+```
+
+##### Remove trailing numbers, letters or conjunctions:
+
+In the EVTYPE, we observe some entries have extra numbers or letters such as "high wind 48", "hail 1 75", "thunderstorm wind g50", and "tornado f0". At this step, we handle these cases so that they can match to the given 48 storm event types. During this step we also observe some entries like "thunderstorm wind 59 mph" and we handle them. In addition, some of the EVTYPEs have conjunctions at the end, such as "heavy snow and" and "thunderstorm winds and". So, we remove such conjunctions from the entries.
+
+```{r}
+events <- gsub(" [a-z]\\d+\\s*$", "", events)
+events <- gsub("\\d* \\d+\\s*$", "", events)
+events <- gsub(" \\d+\\s*mph\\s*$", "", events)
+events <- gsub(" and$", "", events)
+length(unique(events))
+```
+
+##### Trim leading and trailing whitespaces, replace multiple space with single space:
+
+Some observations have spaces at the beginning or ending of the EVTYPE. Thus, we trim all the leading and trailing whitespaces. Also, some entries have multiple spaces in between words. So, we replace such cases with single space.
+
+```{r}
+events <- gsub("^\\s+|\\s+$", "", events)
+events <- gsub("\\s{2,}", "\\s", events)
+length(unique(events))
+```
+
+##### Convert plural to singular:
+
+We remove the trailing "s" characters so that plural words can match with the singular ones such as "rip currents" and "rip current".
+
+```{r}
+events <- gsub("s$", "", events)
+length(unique(events))
+```
+
+##### Handle more specific cases:
+
+In the given storm event type list we have "Hurricane (Typhoon)"; however, in the data we observe more specific cases such as "hurricane erin" and "hurricane opal". We handle such cases below.
+
+```{r}
+events <- gsub("^hurricane .*$", "hurricane typhoon", events)
+events <- gsub("^hurricane$", "hurricane typhoon", events)
+events <- gsub("^typhoon$", "hurricane typhoon", events)
+length(unique(events))
+```
+
+Furthermore, in the EVTYPE data, we observe some entries like "summary of april" or "summary of may 26 am". Since these entries have no match in the 48 event types, we just replace them with empty strings.
+
+```{r}
+events <- gsub("^summary.*$", "", events)
+length(unique(events))
+```
+
+In the storm event list we have "Coastal Flood", "Flash Flood", and "Flood" types; however, in the given data we have EVTYPEs such as "coastal flooding", "flash flooding", and "flooding". So at this step we handle such cases.
+
+```{r}
+events <- gsub("flooding", "flood", events)
+length(unique(events))
+```
+
+Moreover, in the EVTYPE we observe that some of the entries have adjectives or adverbs that emphasize the level or impact of the event. Here is a few example: "record excessive heat", "severe thunderstorm wind", "unseasonably cold", "unusual warmth", and "very dry". Even though these events were stored this way, during the analysis they should be grouped together with the same event types. Therefore, at this step we remove these adverbs from the EVTYPE data. Below is a list of removed words:
+ 
+* record
+* very
+* extreme
+* excessive
+* severe
+* unusual
+* unusually
+* unseasonal
+* unseasonably
+                
+```{r}
+events <- gsub("record|very|extreme|excessive|severe|unusual|unusually|unseasonal|unseasonably", "", events)
+events <- gsub("^\\s+|\\s+$", "", events)
+events <- gsub("\\s{2,}", "\\s", events)
+events <- gsub("s$", "", events)
+length(unique(events))
+```
+
+Finally, in the data we observe two event types a lot but in fact they are not in our list of 48 storm event types. These are "tstm wind" (129058 times) and "marine tstm wind" (6175 times). These two events are same as "thunderstorm wind" and "marine thunderstorm wind" respectivelly. Thus, at this step we replace "tstm" with "thunderstorm".
+
+```{r}
+events <- gsub("tstm", "thunderstorm", events)
+length(unique(events))
+```
+
+##### Spelling correction:
+
+After all the above modifications when we check the data, we observe some misspellings such as:
+
+* Extra character: "wayterspout" (should have been "waterspout")
+* Extra space: "thunderstorm w ind" (should have been "thunderstorm wind")
+* Missing character: "thunderstorm win" (should have been "thunderstorm wind")
+* Misplaced characters: "tornadoe" and "torndao" (should have been "tornado")
+
+Therefore, as the last step in the data processing, we perform spelling correction on the data. Using the **"correct"** function from [Peter Norvig's Spell Checker in Two Lines of Base R](http://www.sumsar.net/blog/2014/12/peter-norvigs-spell-checker-in-two-lines-of-r/) we try to correct some of the misspelled event types. 
+
+During this step, rather than using an available dictionary, we use the 100 most frequently observed events from our processed data as our reference for correcting misspelled words. For this process, the reference words are very important because for each misspelled word the edit distance will be calculated using these reference words.
+
+```{r}
+#sort(table(events),decreasing=TRUE)[1:100]
+sorted_words <- names(sort(table(events),decreasing=TRUE)[1:100])
+
+correct <- function(word) { c(sorted_words[ adist(word, sorted_words) <= min(adist(word, sorted_words), 2)], word)[1] }
+
+temp.data.2$EVTYPE2 <- sapply(events, correct)
+length(unique(temp.data.2$EVTYPE2))
+```
+
+Finally, as you can see we reduce the unique event types number from 985 to 541.
+
+### Most harmful events with respect to population health
+
+Now, we can start our analysis. In this part of the analysis, we need to find types of events that are most harmful with respect to population health. For this analysis we create a new data frame that contains only the variables we will use in this part.
+
+In the given NWS Storm Data Documentation, fatalities and injuries directly caused by the weather event is entered in the Storm Database as "fatality" and "injury" entry fields. In order to determine events that are most harmful to population health, we will use these two entry fields.
+
+```{r}
+population.health <- subset(temp.data.2, select = c("EVTYPE2", "FATALITIES", "INJURIES"))
+
+fatalities <- aggregate(population.health$FATALITIES, by=list((population.health$EVTYPE2)),sum)
+colnames(fatalities) = c("Event.Type", "Total.Fatalities")
+
+injuries <- aggregate(population.health$INJURIES, by=list((population.health$EVTYPE2)),sum)
+colnames(injuries) = c("Event.Type", "Total.Injuries")
+
+top.fatalities <- fatalities[order(-fatalities$Total.Fatalities),][1:10,]
+top.injuries <- injuries[order(-injuries$Total.Injuries),][1:10,]
+```
+
+Now let's take a look at the top 10 event types that cause fatalities, and the top 10 event types that cause injuries:
+
+```{r population.health.1}
+fatalities.plot <-ggplot(data = top.fatalities, aes(x = reorder(Event.Type, -Total.Fatalities), y =  Total.Fatalities)) + geom_bar(stat = "identity", fill="light green", colour="light green") + coord_flip() + labs(title = "Top 10 Event Types That Cause Fatalities (1993 - 2011)", x = "Event Types", y = "Total Fatalities")
+ 
+injuries.plot <-ggplot(data = top.injuries, aes(x = reorder(Event.Type, -Total.Injuries), y =  Total.Injuries)) + geom_bar(stat = "identity", fill="light green", colour="light green") + coord_flip() + labs(title = "Top 10 Event Types That Cause Injuries (1993 - 2011)", x = "Event Types", y = "Total Injuries")
+ 
+grid.arrange(fatalities.plot, injuries.plot, nrow=2)
+```
+
+As you can see from the above plots, between 1993 and 2011 **"heat"** caused the most fatalities while **"tornado"** caused the most injuries.
+
+Furthermore, rather than analyzing fatalities and injuries separatelly, we can analyze the events' total impact to population health. For this analysis we need to merge "FATALITIES" and "INJURIES" variables. The most simple way to merge these two variables is to add them. However, at this step we should also consider the fact that compared to injuries, fatalities have more serious impact on population health. In order to solve this problem, we can add these two variable using different weights so that their effect on the total impact will be different. Below we try 4 different weight options:
+
+* Total Impact with Weight 1 = Fatalities + Injuries
+* Total Impact with Weight 3 = **3 * **Fatalities + Injuries
+* Total Impact with Weight 5 = **5 * **Fatalities + Injuries
+* Total Impact with Weight 10 = **10 * **Fatalities + Injuries
+
+```{r}
+population.health$TOTAL.IMPACT.W1 <- population.health$FATALITIES + population.health$INJURIES
+population.health$TOTAL.IMPACT.W3 <- population.health$FATALITIES*3 + population.health$INJURIES
+population.health$TOTAL.IMPACT.W5 <- population.health$FATALITIES*5 + population.health$INJURIES
+population.health$TOTAL.IMPACT.W10 <- population.health$FATALITIES*10 + population.health$INJURIES
+
+total.impact.w1 <- aggregate(population.health$TOTAL.IMPACT.W1, by=list((population.health$EVTYPE2)),sum)
+colnames(total.impact.w1) = c("Event.Type", "Total.Impact")
+
+total.impact.w3 <- aggregate(population.health$TOTAL.IMPACT.W3, by=list((population.health$EVTYPE2)),sum)
+colnames(total.impact.w3) = c("Event.Type", "Total.Impact")
+
+total.impact.w5 <- aggregate(population.health$TOTAL.IMPACT.W5, by=list((population.health$EVTYPE2)),sum)
+colnames(total.impact.w5) = c("Event.Type", "Total.Impact")
+
+total.impact.w10 <- aggregate(population.health$TOTAL.IMPACT.W10, by=list((population.health$EVTYPE2)),sum)
+colnames(total.impact.w10) = c("Event.Type", "Total.Impact")
+
+top.w1 <- total.impact.w1[order(-total.impact.w1$Total.Impact),][1:10,]
+top.w3 <- total.impact.w3[order(-total.impact.w3$Total.Impact),][1:10,]
+top.w5 <- total.impact.w5[order(-total.impact.w5$Total.Impact),][1:10,]
+top.w10 <- total.impact.w10[order(-total.impact.w10$Total.Impact),][1:10,]
+```
+
+Now, let's take a look at the top events obtained using same weights for fatalities and injuries:
+
+```{r population.health.2}
+population.health.plot <-ggplot(data = top.w1, aes(x = reorder(Event.Type, -Total.Impact), y =  Total.Impact)) + 
+  geom_bar(stat = "identity", fill="light green", colour="light green") + 
+  coord_flip() + 
+  labs(title = "Top 10 Most Harmful Event Types To Population Health (1993 - 2011)", x = "Event Types", y = "Total Impact (Fatalities + Injuries)")
+population.health.plot 
+```
+
+When we look at the total impact, as expected **"tornado"** and **"heat"** are again the most harmful event types to population health. This is also the case when we use different weight options for total impact (please see the below table for top 10 harmful events based on different weights).
+
+```{r}
+tops = data.frame(top.w1$Event.Type, top.w3$Event.Type, top.w5$Event.Type, top.w10$Event.Type)
+tops
+```
+
+### Events that have the greatest economic consequences
+
+In the second part of the analysis, we need to find types of events that have the greatest economic consequences. In the given data, the property damage and crop damage are represented with two fields each, PROPDMG/CROPDMG keep the estimated dolar amount rounded to three significant digits and PROPDMGEXP/CROPDMGEXP keep the alphabetical character signifying the magnitude of the number such as "K" for thousands, "M" for millions, and "B" for billions. Again for this analysis we create a new data frame that contains only the variables we will use in this part.
+
+In the data set, a lot of zeros were observed in PROPDMG and CROPDMG variables. Since those observations will have no impact to our analysis, we keep only the observations that have positive values for either one of these two variables.
+
+```{r}
+economic.consequences <- temp.data.2 %>% 
+    select(EVTYPE2, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+    filter(PROPDMG > 0 | CROPDMG > 0)
+```
+
+Now let's take a look at the PROPDMGEXP and CROPDMGEXP variables. As you can see from the below tables, other than "K", "M" or "B" factors, there exist some other factors. However, we could not find any explanation for these factors in the NWS Storm Data Documentation. Since we do not have any information about these factors and their frequency is very low (0.1% in PROPDMGEXP and 0.06% in CROPDMGEXP) we decide to use only the PROPDMG and CROPDMG values for these observations.
+
+```{r}
+print(table(economic.consequences[economic.consequences$PROPDMG >0,]$PROPDMGEXP))
+print(table(economic.consequences[economic.consequences$CROPDMG >0,]$CROPDMGEXP))
+```
+
+At this step, we create a new variable that has the estimated damage amount calculated using PROPDMG and PROPDMGEXP (and CROPDMG and CROPDMGEXP):
+
+```{r}
+economic.consequences$PROPDMGEXP2 <- 1
+economic.consequences$PROPDMGEXP2[economic.consequences$PROPDMGEXP == "K" | economic.consequences$PROPDMGEXP == "k"] <- 10^3
+economic.consequences$PROPDMGEXP2[economic.consequences$PROPDMGEXP == "M" | economic.consequences$PROPDMGEXP == "m"] <- 10^6
+economic.consequences$PROPDMGEXP2[economic.consequences$PROPDMGEXP == "B"] <- 10^9
+
+economic.consequences$PROPDMG2 <- economic.consequences$PROPDMG * economic.consequences$PROPDMGEXP2
+```
+
+```{r}
+economic.consequences$CROPDMGEXP2 <- 1
+economic.consequences$CROPDMGEXP2[economic.consequences$CROPDMGEXP == "K" | economic.consequences$CROPDMGEXP == "k"] <- 10^3
+economic.consequences$CROPDMGEXP2[economic.consequences$CROPDMGEXP == "M" | economic.consequences$CROPDMGEXP == "m"] <- 10^6
+economic.consequences$CROPDMGEXP2[economic.consequences$CROPDMGEXP == "B"] <- 10^9
+
+economic.consequences$CROPDMG2 <- economic.consequences$CROPDMG * economic.consequences$CROPDMGEXP2
+```
+
+Using the newly created variables, we can aggregate the total property and total crop damage for each event type, and find the top 10 events that caused the greatest damage:
+
+```{r}
+property.damage <- aggregate(economic.consequences$PROPDMG2, by=list((economic.consequences$EVTYPE2)),sum)
+colnames(property.damage) = c("Event.Type", "Total.Property.Damage")
+
+crop.damage <- aggregate(economic.consequences$CROPDMG2, by=list((economic.consequences$EVTYPE2)),sum)
+colnames(crop.damage) = c("Event.Type", "Total.Crop.Damage")
+
+top.property.damage <- property.damage[order(-property.damage$Total.Property.Damage),][1:10,]
+top.crop.damage <- crop.damage[order(-crop.damage$Total.Crop.Damage),][1:10,]
+```
+
+```{r economic.consequences.1}
+property.damage.plot <-ggplot(data = top.property.damage, aes(x = reorder(Event.Type, -Total.Property.Damage), y =  Total.Property.Damage)) + 
+  geom_bar(stat = "identity", fill="light green", colour="light green") + 
+  coord_flip() + 
+  labs(title = "10 Event Types That Cause The Most Property Damage (1993 - 2011)", x = "Event Types", y = "Total Property Damage)")
+ 
+crop.damage.plot <-ggplot(data = top.crop.damage, aes(x = reorder(Event.Type, -Total.Crop.Damage), y =  Total.Crop.Damage)) + 
+  geom_bar(stat = "identity", fill="light green", colour="light green") + 
+  coord_flip() + 
+  labs(title = "10 Event Types That Cause The Most Crop Damage (1993 - 2011)", x = "Event Types", y = "Total Crop Damage")
+ 
+grid.arrange(property.damage.plot, crop.damage.plot, nrow=2)
+```
+
+As you can see from the above plots, **"flood"** caused the most property damage while **"drought"** caused the most crop damage. 
+
+Similar to the previous part of the analysis, rather than analyzing property and crop damages separatelly, we can analyze the events' total economical impacts together. Since property damage and crop damage do not have different significance levels, we just simply add these two variables to calculate the total impact:
+
+```{r}
+economic.consequences$TOTAL.IMPACT <- economic.consequences$PROPDMG2 + economic.consequences$CROPDMG2
+
+total.impact <- aggregate(economic.consequences$TOTAL.IMPACT, by=list((economic.consequences$EVTYPE2)),sum)
+colnames(total.impact) = c("Event.Type", "Total.Impact")
+
+top <- total.impact[order(-total.impact$Total.Impact),][1:10,]
+```
+
+```{r economic.consequences.2}
+economic.consequences.plot <-ggplot(data = top, aes(x = reorder(Event.Type, -Total.Impact), y =  Total.Impact)) + 
+  geom_bar(stat = "identity", fill="light green", colour="light green") + 
+  coord_flip() + 
+  labs(title = "10 Event Types With The Greatest Economic Consequences(1993-2011)", x = "Event Types", y = "Total Impact (Property Damage + Crop Damage)")
+economic.consequences.plot 
+```
+
+When we look at the total impact, **"flood"** had the greatest economic consequence between 1993 and 2011. 
+
+The above plot indicates that by far **"flood"** cause the most property and crop damage. Furthermore, in the top 10 most damaging event types, we have 2 other flood related events: "river flood" and "flash flood". I think there is a bias in the data which leads to these results. In the NWS Storm Data Documentation, it is stated that 
+"*Property damage estimates should be entered as actual dollar amounts, if a reasonably accurate estimate from an insurance company or other qualified individual is available. If this estimate is not available, then the preparer has two choices: either check the "no information available" box, or make an estimate. The exception is for flood events. The Storm Data preparer must enter monetary damage amounts for flood events, even if it is a "guesstimate." The U.S. Army Corps of Engineers requires the NWS to provide monetary damage amounts (property and/or crop) resulting from any flood event.*"
+
+Therefore, I believe the reason we observe so much flood related event types in the top 10 list is this requirement to enter the damage amount even it is an estimate.
+
+### Conclusion
+
+At the end of the above analysis, we received to the below conclusions:
+
+* Heat caused the most number of fatalities between 1993 and 2011 while tornados caused the most injuries. In general, heat, tornado, flood, flash flood, lightning, thunderstorm wind, and high wind are the top event types that cause fatalities and injuries.
+
+* When considering the general impact to the population health, we observe that tornado is the most harmful event type followed by heat. Using different weights to calculate the total impact lead to small differences in the ranking of the top damaging events. 
+
+* Across the United States, flood caused the most property damage between 1993 and 2011. During same years, drought cause the most of crop damage.
+
+* When the total economical damage is considered, flood caused the most property and crop damage. However, as explained in the analysis section, we believe that there is a strong bias towards flood which leads to this huge difference between the damage amounts. 
+
